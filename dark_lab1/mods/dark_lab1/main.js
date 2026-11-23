@@ -5,6 +5,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, agents, focused, run, openOverlay, theme, window, props, exec, checking } from "herdr";
+import { startUpdates, installUpdate } from "./updater.js";
 
 const MONO = "JetBrains Mono";
 const ART = "mods/dark_lab1";
@@ -161,6 +162,8 @@ export default class DarkLab extends View {
   init(_props, cx) {
     this.part = props()?.part ?? "banner";
     this.size = { width: 0, height: 0 };
+    // opt-in updates from the repo (updater.js); off by default
+    if (this.part === "banner" && !checking()) startUpdates(this, cx, { name: "dark_lab1", title: "Dark Lab" });
     if (this.part === "bays") {
       this.ctx = null;
       this.scroll = ScrollHandle.new();
@@ -244,6 +247,7 @@ export default class DarkLab extends View {
     const field = (label, value, color = C.text) => h_flex().gap(8).items_center()
       .child(div().text_color(C.muted).child(label)).child(div().text_color(color).max_w(160).truncate().child(value));
     const sep = () => div().w(1).h(14).bg(C.line);
+    const upd = this.updates;
     const art = (file) => image(`${ART}/art/${file}`).absolute().left(ox).top(oy).w(aw).h(ah);
     return this.sized(div().id("banner").size_full().relative().overflow_hidden().font_family(MONO))
       .when(width > 0, (el) => el
@@ -258,6 +262,14 @@ export default class DarkLab extends View {
         .child(div().font_bold().italic().text_size(18).text_color(C.slash).child("///"))
         .child(div().font_bold().text_size(20).text_color("#f4f0ff").child("DARK LAB")))
       .child(h_flex().absolute().left(ox + 1100 * s).right(Math.max(0, ox)).top(oy).h(bandH).pr(20).gap(16).items_center().justify_end().text_size(12.5)
+        .when(Boolean(upd?.next || upd?.busy), (el) => el
+          .child(h_flex().id("update").gap(8).items_center().cursor_pointer()
+            .tooltip(upd.busy ? "Installing update…" : `${upd.next.notes ?? "New version"} · click to install`)
+            .on_click((_e, cx) => installUpdate(this, cx))
+            .child(div().text_color(C.muted).child("UPDATE"))
+            .child(div().text_color(C.amber).child(upd.busy ? "…" : `v${upd.next.version}`)
+              .when(upd.busy, (x) => x.loop("opacity", { from: 0.35, to: 1, period: 900, easing: "ease-in-out" }))))
+          .child(sep()))
         .when(Boolean(branch), (el) => el.child(field("BRANCH", branch)).child(sep()))
         .child(field("AGENTS", `${working}/${list.length}`, working ? C.mint : C.text))
         .child(sep())

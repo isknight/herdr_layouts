@@ -60,18 +60,20 @@ Status colors: working `#3ef0b0` "Working", blocked `#ffb020` "Needs review", do
   - Window: prop, else reported, else Claude rule (`[1m]`, Claude 5+, or >200k used → 1M; else 200k), else tokens only.
 - **Lab**: cover-fit by hand (`s = max(w/392, h/480)`), label and lights placed in source coordinates.
 - **History**: `localStorage` `"history"` = `{ at, b: [{ w, e }] }`, smoothed `v = 0.6v + 0.4w`.
+- **Updates** (`updater.js`, `version.json`): off by default. Commands `dark_lab1.updates-off | updates-notify | updates-auto | update`. When on, every 6h it curls the repo's `version.json` (source in the local one) and shows `UPDATE vX` (amber, before BRANCH; click installs). Install = download the repo tarball, run the folder's `install.sh`.
 
 **Art** `mods/dark_lab1/art/`: `lab-banner.png`, `lab-banner-front2.png`, `lab.png`, `icon-tablet/scope/core.png`. SVGs: `flask`, `prompt`, `layers`, `bars`.
 
 ## Watch out
 
 - **Copy `themes/dark_lab1.json` too.** Herdr's steps only mention `layouts/` and `mods/`.
-- **Tell the person:** the mod runs `sh` (plus `sqlite3`, `ls`, `grep`, `tail`, `sed`, `head`, `find`, `xargs`, `tr`, `cat`) and reads agents' session logs outside its folder, only for token counts. No network.
+- **Tell the person:** the mod runs `sh` (plus `sqlite3`, `ls`, `grep`, `tail`, `sed`, `head`, `find`, `xargs`, `tr`, `cat`) and reads agents' session logs outside its folder, only for token counts. No network unless updates are turned on; then it uses `curl` and `tar`, and auto mode runs the downloaded `install.sh`.
 - `image()` keeps aspect ratio and backgrounds are only cover/contain, so do the fit math yourself and place every layer from the same `ox, oy, s`.
 - Rain goes *between* the two art layers. On top, it falls over the wall and lamp.
 - `.loop()` ping-pongs (rain would go back up). Use `.frames()`. It skips newlines, so one cell per row.
 - Big, fast gear movement is distracting next to the terminals. Keep it small.
 - Herdr caches images by path. New art needs a new filename.
+- Bump `version.json` with every change you push, or updates won't see it. A fork should point its `source` at its own repo.
 - Banner text sits on cleared areas of this art (brand plate, readout panel).
 - Herdr desktop doesn't recognize Devin; it needs a `programs.json` `devin` entry. Devin is untested on a real install.
 
@@ -85,3 +87,4 @@ Status colors: working `#3ef0b0` "Working", blocked `#ffb020` "Needs review", do
 - With Claude Code focused, the meter shows e.g. `21% · 214k / 1M`.
 - Tabs select, rename, close; `+` opens the menu.
 - Activity shows 30 dots and survives a restart.
+- `herdr-app do dark_lab1.updates-notify` shows a toast; with a newer `version.json` in the repo, the UPDATE readout appears.
