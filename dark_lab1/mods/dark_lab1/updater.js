@@ -60,13 +60,15 @@ export async function applyUpdate(name) {
   return /installed /.test(r.stdout);
 }
 
-export function startUpdates(view, cx, { name, title }) {
+// onCommand(c): the mod's own commands; return true when handled (this loop owns nextCommand)
+export function startUpdates(view, cx, { name, title, onCommand }) {
   view.updates = { name, title, next: null, busy: false };
   checkNow(view, cx);
   cx.timer.every(CHECK_MS, (cx) => checkNow(view, cx));
   cx.spawn(async (cx) => {
     for (;;) {
       const c = await nextCommand();
+      if (onCommand?.(c)) { cx.notify(); continue; }
       const m = /^updates-(off|notify|auto)$/.exec(c ?? "");
       if (m) {
         setMode(m[1]);

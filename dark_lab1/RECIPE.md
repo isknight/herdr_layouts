@@ -34,6 +34,7 @@ Status colors: working `#3ef0b0` "Working", blocked `#ffb020` "Needs review", do
 - Bays: click selects, double-click renames, right-click opens the space menu, `+` makes a space. The list keeps the active bay in view.
 - Tabs: click selects, double-click renames, middle-click closes, right-click opens the tab menu, `+` opens the new-tab menu.
 - Working squares pulse. Banner flask pulses while anything works.
+- Motion (rain, gear, lab monitor and console lights): `auto` moves only while any agent works, `off` holds a still frame, `on` always moves. Default `auto`. The rain alone redraws the window ~50 times a second, which is why it rests when idle.
 - Rain only falls down, each column at its own speed (18–24ms a step).
 - Gear moves slowly on purpose: bars drift ~4 source px (5.2s / 4.3s / 6.1s), LEDs blink every 1.1–3.1s, glows breathe, the white light slides over 2.6s.
 - Lab monitor pulses faster while the active space is working.
@@ -60,6 +61,7 @@ Status colors: working `#3ef0b0` "Working", blocked `#ffb020` "Needs review", do
   - Window: prop, else reported, else Claude rule (`[1m]`, Claude 5+, or >200k used → 1M; else 200k), else tokens only.
 - **Lab**: cover-fit by hand (`s = max(w/392, h/480)`), label and lights placed in source coordinates.
 - **History**: `localStorage` `"history"` = `{ at, b: [{ w, e }] }`, smoothed `v = 0.6v + 0.4w`.
+- **Motion**: banner keeps the mode in its `localStorage` `"motion"` and publishes it with `setShared("dark_lab1.motion")` so the lab part follows. Commands `dark_lab1.motion-auto | motion-off | motion-on` (through `startUpdates`' `onCommand`), or click the flask to cycle. Still frame = each `.loop()` set to a fixed value, rain cells show frame 0 as plain text.
 - **Updates** (`updater.js`, `version.json`): off by default. Commands `dark_lab1.updates-off | updates-notify | updates-auto | update`. When on, every 6h it curls the repo's `version.json` (source in the local one) and shows `UPDATE vX` (amber, before BRANCH; click installs). Install = download the repo tarball, run the folder's `install.sh`.
 
 **Art** `mods/dark_lab1/art/`: `lab-banner.png`, `lab-banner-front2.png`, `lab.png`, `icon-tablet/scope/core.png`. SVGs: `flask`, `prompt`, `layers`, `bars`.

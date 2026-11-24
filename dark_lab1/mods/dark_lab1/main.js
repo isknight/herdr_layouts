@@ -4,7 +4,7 @@
 // history (a 30-minute curve of agent activity).
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, agents, focused, run, openOverlay, theme, window, props, exec, checking } from "herdr";
+import { spaces, panes, agents, focused, run, openOverlay, theme, window, props, exec, checking, shared, setShared, notify } from "herdr";
 import { startUpdates, installUpdate } from "./updater.js";
 
 const MONO = "JetBrains Mono";
@@ -23,6 +23,21 @@ const STATUS = {
   idle: { label: "Idle", color: C.lav },
 };
 const stop = (_e, cx) => cx.stop_propagation();
+
+// ---------- motion: the rain, bench gear and lab lights ----------
+// auto (default) moves only while an agent works, so an idle window stops redrawing;
+// on always moves, off never does. The banner keeps the mode and shares it with the other parts.
+const MOTION_KEY = "dark_lab1.motion", MOTIONS = ["auto", "off", "on"];
+const motion = () => (MOTIONS.includes(shared(MOTION_KEY)) ? shared(MOTION_KEY) : "auto");
+const moving = () => motion() === "on" || (motion() === "auto" && agents().some((a) => a.status === "working"));
+function setMotion(m) {
+  setShared(MOTION_KEY, m);
+  try { localStorage.setItem("motion", m); } catch {}
+  notify({ title: "Dark Lab", body: `Motion: ${m}`, timeout: 3000 });
+}
+// .loop() while moving; otherwise hold still at opts.still (default: opts.from)
+const SET = { opacity: "opacity", left: "left", top: "top", width: "w", height: "h" };
+const anim = (el, on, prop, opts) => (on ? el.loop(prop, opts) : el[SET[prop]](opts.still ?? opts.from));
 
 // ---------- context window: read from each agent's own session log ----------
 // Claude Code, Codex, pi and Devin each keep a local log with token usage; the script finds the log
@@ -139,7 +154,7 @@ const kfmt = (n) => (n >= 1000000 ? `${+(n / 1000000).toFixed(1)}M` : `${Math.ro
 // ---------- rain: forward-only (`.loop` goes there and back, `.frames` only steps on) ----------
 // Each drop is a column of one-character cells started together; cell r shows the glyph while
 // the streak passes row r. Columns get their own gap, speed and start so they never line up.
-function rain(x0, x1, height, count, { cell, len, ms }) {
+function rain(x0, x1, height, count, { cell, len, ms }, on = true) {
   const rows = Math.max(4, Math.ceil(height / cell));
   return Array.from({ length: count }, (_, i) => {
     const x = Math.round(x0 + (((i * 37) % 97) / 97) * (x1 - x0));
@@ -147,11 +162,12 @@ function rain(x0, x1, height, count, { cell, len, ms }) {
     const shift = (i * 17) % total;
     return div().absolute().left(x).top(0).w(cell).h(rows * cell).opacity(0.4)
       .text_color(i % 4 === 0 ? "#ff8af0" : "#b9b0ff").font_family(MONO).text_size(cell).line_height(cell)
-      .children(Array.from({ length: rows }, (_, r) => div().absolute().left(0).top(r * cell).w(cell).h(cell)
-        .frames(Array.from({ length: total }, (_, k) => {
-          const f = (k + shift) % total;
-          return r <= f && r > f - len ? "│" : " ";
-        }), ms + (i % 3) * 3)));
+      .children(Array.from({ length: rows }, (_, r) => {
+        const glyph = (k) => { const f = (k + shift) % total; return r <= f && r > f - len ? "│" : " "; };
+        const c = div().absolute().left(0).top(r * cell).w(cell).h(cell);
+        // still: the drops stay where frame 0 puts them
+        return on ? c.frames(Array.from({ length: total }, (_, k) => glyph(k)), ms + (i % 3) * 3) : c.child(glyph(0));
+      }));
   });
 }
 
@@ -163,7 +179,13 @@ export default class DarkLab extends View {
     this.part = props()?.part ?? "banner";
     this.size = { width: 0, height: 0 };
     // opt-in updates from the repo (updater.js); off by default
-    if (this.part === "banner" && !checking()) startUpdates(this, cx, { name: "dark_lab1", title: "Dark Lab" });
+    if (this.part === "banner" && !checking()) {
+      try { const m = localStorage.getItem("motion"); if (MOTIONS.includes(m) && m !== shared(MOTION_KEY)) setShared(MOTION_KEY, m); } catch {}
+      startUpdates(this, cx, {
+        name: "dark_lab1", title: "Dark Lab",
+        onCommand: (c) => { const m = /^motion-(auto|on|off)$/.exec(c ?? ""); if (m) setMotion(m[1]); return Boolean(m); },
+      });
+    }
     if (this.part === "bays") {
       this.ctx = null;
       this.scroll = ScrollHandle.new();
@@ -249,15 +271,16 @@ export default class DarkLab extends View {
     const sep = () => div().w(1).h(14).bg(C.line);
     const upd = this.updates;
     const art = (file) => image(`${ART}/art/${file}`).absolute().left(ox).top(oy).w(aw).h(ah);
+    const on = moving();
     return this.sized(div().id("banner").size_full().relative().overflow_hidden().font_family(MONO))
       .when(width > 0, (el) => el
         .child(art("lab-banner.png"))
         // rain over the window view, then the art again with the glass cut out: frame, wall,
         // lamp and cables cover the drops, so it rains outside the window
         .child(div().absolute().left(ox).top(oy).w(aw).h(ah).overflow_hidden()
-          .children(rain(606 * s, aw, ah, Math.round((aw - 606 * s) / 22), { cell: 7, len: 2, ms: 18 })))
+          .children(rain(606 * s, aw, ah, Math.round((aw - 606 * s) / 22), { cell: 7, len: 2, ms: 18 }, on)))
         .child(art("lab-banner-front2.png"))
-        .children(this.gear(ox, oy, s)))
+        .children(this.gear(ox, oy, s, on)))
       .child(h_flex().absolute().left(Math.max(lights ? 86 : 0, ox + 22 * s)).top(oy).h(bandH).gap(14).items_center()
         .child(div().font_bold().italic().text_size(18).text_color(C.slash).child("///"))
         .child(div().font_bold().text_size(20).text_color("#f4f0ff").child("DARK LAB")))
@@ -274,22 +297,25 @@ export default class DarkLab extends View {
         .child(field("AGENTS", `${working}/${list.length}`, working ? C.mint : C.text))
         .child(sep())
         .child(field("BAYS", String(spaces().length).padStart(3, "0")))
-        .child(svg(`${ART}/flask.svg`).size(20).text_color(working ? C.mint : C.text)
-          .when(working > 0, (x) => x.loop("opacity", { from: 0.45, to: 1, period: 1400, easing: "ease-in-out" }))));
+        // click the flask to cycle motion: auto → off → on
+        .child(div().id("motion").cursor_pointer().tooltip(`Motion: ${motion()} · click to change`)
+          .on_click(() => setMotion(MOTIONS[(MOTIONS.indexOf(motion()) + 1) % MOTIONS.length]))
+          .child(svg(`${ART}/flask.svg`).size(20).text_color(working ? C.mint : C.text)
+            .when(working > 0, (x) => x.loop("opacity", { from: 0.45, to: 1, period: 1400, easing: "ease-in-out" })))));
   }
 
   // The lab equipment in the banner's left half, brought to life. Positions are in the
   // 1586×108 source art and land on the fitted picture through ox, oy and s.
-  gear(ox, oy, s) {
+  gear(ox, oy, s, on) {
     const at = (x, y, w, h) => div().absolute().left(ox + x * s).top(oy + y * s).w(w * s).h(h * s);
     const pulse = (from, to, period) => ({ from, to, period, easing: "ease-in-out" });
     // the green level meter: the art's bars are covered, then three bars rise and fall
     const bar = (x, lo, hi, period) => at(x, 70, 5, 23).flex().flex_col().justify_end()
-      .child(div().w_full().bg(C.mint).h(hi * s).loop("height", { from: lo * s, to: hi * s, period, easing: "ease-in-out" }));
+      .child(anim(div().w_full().bg(C.mint).h(hi * s), on, "height", { from: lo * s, to: hi * s, still: hi * s, period, easing: "ease-in-out" }));
     // a status LED that softly blinks off and on (a dark cover fading in and out)
-    const blink = (x, y, w, h, period) => at(x, y, w, h).bg("#120818").loop("opacity", pulse(0, 0.85, period));
+    const blink = (x, y, w, h, period) => anim(at(x, y, w, h).bg("#120818"), on, "opacity", pulse(0, 0.85, period));
     // a light that glows brighter now and then
-    const glow = (x, y, w, h, color, to, period) => at(x, y, w, h).rounded(2 * s).bg(color).loop("opacity", pulse(0, to, period));
+    const glow = (x, y, w, h, color, to, period) => anim(at(x, y, w, h).rounded(2 * s).bg(color), on, "opacity", { ...pulse(0, to, period), still: to / 2 });
     return [
       at(411, 69, 23, 25).bg("#150d1f"),
       // small, slow drifts around each bar's painted height, so the meter idles rather than dances
@@ -302,8 +328,8 @@ export default class DarkLab extends View {
       blink(101, 70, 4, 5, 2300), blink(396, 73, 5, 4, 1100), blink(455, 70, 5, 4, 3100),
       blink(451, 95, 7, 4, 1700), blink(279, 86, 3, 6, 2900), blink(349, 69, 3, 3, 1300),
       // a scanner light sweeping along the pink slot of the right-hand box
-      at(498, 75, 13, 5).child(div().absolute().top(0).w(4 * s).h(5 * s).bg("#fff0f8").opacity(0.75)
-        .loop("left", { from: 0, to: 9 * s, period: 2600, easing: "ease-in-out" })),
+      at(498, 75, 13, 5).child(anim(div().absolute().top(0).w(4 * s).h(5 * s).bg("#fff0f8").opacity(0.75),
+        on, "left", { from: 0, to: 9 * s, period: 2600, easing: "ease-in-out" })),
     ];
   }
 
@@ -368,16 +394,16 @@ export default class DarkLab extends View {
     const tab = space?.tabs.find((x) => x.active);
     const lead = tab && (panes().find((p) => p.tab === tab.id && p.program?.agent) ?? panes().find((p) => p.tab === tab.id));
     const label = [space?.name, tab ? (tab.named ? tab.name : lead?.program?.name ?? `Tab ${tab.index}`) : null].filter(Boolean).join(" · ");
-    const busy = space?.status === "working";
+    const busy = space?.status === "working", on = moving();
     const [lx, ly] = at(80, 306), [m1x, m1y] = at(330, 296), [m2x] = at(352, 296), [sx, sy] = at(284, 168);
     return this.sized(div().id("lab").size_full().relative().overflow_hidden().rounded(10).font_family(MONO))
       .when(s > 0, (el) => el
         .child(image(`${ART}/art/lab.png`).absolute().left(l).top(t).w(IW * s).h(IH * s))
         // the monitor glows while the bay works; the console lights blink out of step
-        .child(div().absolute().left(sx).top(sy).w(58 * s).h(58 * s).rounded(8 * s).bg(C.mint)
-          .loop("opacity", { from: 0, to: busy ? 0.22 : 0.08, period: busy ? 900 : 2600, easing: "ease-in-out" }))
-        .child(div().absolute().left(m1x).top(m1y).w(9 * s).h(8 * s).bg("#ffc46b").loop("opacity", { from: 0.1, to: 0.85, period: 1300, easing: "ease-in-out" }))
-        .child(div().absolute().left(m2x).top(m1y).w(9 * s).h(8 * s).bg("#ffc46b").loop("opacity", { from: 0.1, to: 0.85, period: 1900, easing: "ease-in-out" }))
+        .child(anim(div().absolute().left(sx).top(sy).w(58 * s).h(58 * s).rounded(8 * s).bg(C.mint), on, "opacity",
+          { from: 0, to: busy ? 0.22 : 0.08, still: busy ? 0.15 : 0.05, period: busy ? 900 : 2600, easing: "ease-in-out" }))
+        .child(anim(div().absolute().left(m1x).top(m1y).w(9 * s).h(8 * s).bg("#ffc46b"), on, "opacity", { from: 0.1, to: 0.85, still: 0.6, period: 1300, easing: "ease-in-out" }))
+        .child(anim(div().absolute().left(m2x).top(m1y).w(9 * s).h(8 * s).bg("#ffc46b"), on, "opacity", { from: 0.1, to: 0.85, still: 0.4, period: 1900, easing: "ease-in-out" }))
         .child(h_flex().absolute().left(lx).top(ly).w(240 * s).h(28 * s).px(10 * s).gap(10 * s).items_center()
           .child(div().font_bold().italic().text_size(12 * s).text_color(C.slash).child("///"))
           .child(div().flex_1().min_w(0).truncate().text_size(12 * s).text_color("#e9e0f5").child(label))));
